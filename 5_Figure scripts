@@ -1,0 +1,316 @@
+#GLM (genotype stratified) bubble plot
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# wild_data
+wild_data <- data.frame(
+  y = c("Ralstonia_mannitolilytica", "Ralstonia_mannitolilytica", "Ralstonia_mannitolilytica",
+        "Ralstonia_mannitolilytica", "Ralstonia_mannitolilytica", "Ralstonia_mannitolilytica",
+        "Veillonella", "Veillonella", "Veillonella", "Veillonella",
+        "Oribacterium", "Oribacterium",
+        "Mycoplasma"),
+  x = c("CO", "SO2", "SO4", "PM1", "PM2.5", "PM10",
+        "CO", "NH4", "SO4", "PM1",
+        "PM2.5", "PM10",
+        "Smoking"),
+  group = "wild",
+  beta = c(0.0060, 0.0002, 0.0017, 0.0005, 0.0000, 0.0000,
+           -0.0086, -0.0019, 0.0001, -0.0005,
+           0.0000, 0.0000,
+           0.0004),
+  p = c(0.2596, 0.4548, 0.1706, 0.3220, 0.8596, 0.7391,
+        0.5923, 0.7371, 0.9890, 0.7214,
+        0.7881, 0.7049,
+        0.4211)
+)
+
+# mut_data
+mut_data <- data.frame(
+  y = c("Ralstonia_mannitolilytica", "Ralstonia_mannitolilytica", "Ralstonia_mannitolilytica",
+        "Ralstonia_mannitolilytica", "Ralstonia_mannitolilytica", "Ralstonia_mannitolilytica",
+        "Veillonella", "Veillonella", "Veillonella", "Veillonella",
+        "Oribacterium", "Oribacterium",
+        "Mycoplasma"),
+  x = c("CO", "SO2", "SO4", "PM1", "PM2.5", "PM10",
+        "CO", "NH4", "SO4", "PM1",
+        "PM2.5", "PM10",
+        "Smoking"),
+  group = "mut",
+  beta = c(-0.0288, -0.0011, -0.0059, -0.0022, -0.0012, -0.0007,
+           -0.0740, -0.0524, -0.0282, -0.0106,
+           0.0003, 0.0001,
+           -0.0028),
+  p = c(0.0042, 0.0034, 0.0153, 0.0248, 0.0179, 0.0156,
+        0.0989, 0.0039, 0.0080, 0.0141,
+        0.0102, 0.0249,
+        0.0045)
+)
+
+# Merge the data.
+all_data <- rbind(wild_data, mut_data)
+# Create a unique combination variable.
+all_data <- all_data %>% 
+  mutate(pair = paste0(y, "_", x))
+
+# Organize the data.
+all_data <- all_data %>%
+  mutate(
+    group = factor(group, levels = c("wild", "mut")),
+    variable = paste0(y, " ~ ", x),
+    sig = ifelse(p < 0.05, "p < 0.05", "ns"),
+    logp = -log10(p)
+  )
+
+# Plot the data with beta values on the x-axis.
+ggplot(all_data, aes(x = beta, y = variable, color = group, shape = sig)) +
+  geom_point(aes(size = logp), alpha = 0.8) +
+  scale_color_manual(values = c("wild" = "#1f77b4", "mut" = "#d62728")) +
+  scale_shape_manual(values = c("p < 0.05" = 16, "ns" = 1)) +
+  theme_minimal(base_size = 12) +
+  labs(
+    x = "β",
+    y = "Variable combinations.",
+    color = "Population type.",
+    shape = "Significance.",
+    size = "-log10(p)",
+    title = "Comparison of association β values across different populations"
+  ) +
+  theme(
+    axis.text.y = element_text(size = 8),
+    legend.position = "right"
+  )
+
+##############################################################################################################
+
+#airpollutant-lungfunction interaction heatmap
+
+library(ggplot2)
+library(dplyr)
+# Input data.
+df <- data.frame(
+  x = c("PM2.5", "PM10", "PM2.5", "Biofuel", "PM2.5", "PM2.5", "PM2.5", "SHS"),
+  y = c("FEV1_FVC_Post", "FEV1pred_post", "CAT score", "COPD", "COPD", "Cough", "Dyspnea", "Phlegm"),
+  beta = c(-4.1943, -5.5173, 4.4034, 1.33, 2.599, 4.222, 6.6264, 1.7494),
+  p = c(0.0645, 0.0551, 0.0014, 0.0989, 0.058, 0.0804, 0.0751, 0.0664)
+)
+
+# Add significance annotations.
+df <- df %>%
+  mutate(signif = case_when(
+    p < 0.01 ~ "**",
+    p < 0.05 ~ "*",
+    TRUE ~ ""
+  ))
+
+# An aesthetically pleasing color scheme: blue–white–orange-red.
+nice_colors <- c("#2166ac", "#67a9cf", "#f7f7f7", "#f4a582", "#b2182b")
+breaks <- c(-6, -2, 0, 2, 7)
+
+# Plot a heatmap.
+ggplot(df, aes(x = x, y = y, fill = beta)) +
+  geom_tile(color = "white", size = 0.6) +
+  geom_text(aes(label = signif), size = 6) +
+  scale_fill_gradientn(colors = nice_colors,
+                       values = scales::rescale(breaks),
+                       limits = c(-6, 7),
+                       name = "Beta") +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  ) +
+  labs(x = "Exposure", y = "Outcome", title = "Heatmap of Beta Coefficients with Significance")
+
+#################################################################################################################
+
+#GLM and scatter plot
+
+library(ggplot2)
+library(dplyr)
+library(broom)
+
+# Read the data.
+data <- read.table("C:/Users/HP/Desktop/17_inter.txt", 
+                   header = TRUE, 
+                   sep = "\t")
+
+# Convert to factor.
+data$genotype_17_76837901 <- factor(data$genotype_17_76837901, levels = c(0, 1))
+
+# Fit a linear regression model (with a continuous dependent variable).
+model <- lm(FEV1_FVC_Post ~ Ralstonia_pickettii + Age + Sex + BMI,
+            data = data)
+
+# Extract the coefficients and confidence intervals.
+model_summary <- tidy(model, conf.int = TRUE)
+row <- model_summary %>% filter(term == "Ralstonia_pickettii")
+coef <- row$estimate
+CI_lower <- row$conf.low
+CI_upper <- row$conf.high
+pval <- row$p.value
+
+# Annotate text.
+annotation_text <- paste0(
+  "β = ", round(coef, 3),
+  " (", round(CI_lower, 3), " - ", round(CI_upper, 3), ")\n",
+  "P = ", format.pval(pval, digits = 3, eps = 1e-3)
+)
+
+# Plot a scatter plot with a regression line.
+ggplot(data, aes(x = Ralstonia_pickettii, y = FEV1_FVC_Post)) +
+  geom_point(aes(color = genotype_17_76837901), size = 2.5, alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "dashed") +
+  scale_color_manual(values = c("0" = "#2166ac", "1" = "#b2182b")) +
+  labs(
+    title = "Ralstonia pickettii vs FEV1/FVC (after bronchodilator)",
+    x = "Ralstonia pickettii abundance",
+    y = "FEV1/FVC after",
+    color = "Genotype"
+  ) +
+  annotate("text", 
+           x = max(data$Ralstonia_pickettii, na.rm = TRUE) * 0.7,
+           y = max(data$FEV1_FVC_Post, na.rm = TRUE) * 0.95,
+           label = annotation_text, size = 5, hjust = 0) +
+  theme_minimal()
+
+###############################################################################################
+
+#MR Sankey diagram
+
+library(ggplot2)
+library(ggalluvial)
+library(dplyr)
+library(RColorBrewer)
+
+# Load the data.
+data <- read.table(header = TRUE, sep = "\t", text = "
+exposure	mediator	outcome	beta
+CI	Actinomyces odontolyticus	CAT_score	0.129893897
+CI	Treponema denticola	CAT_score	0.114939461
+CI	Actinomyces odontolyticus	FEV1_FVC_after	0.206583687
+CI	Slackia exigua	FEV1_FVC_after	0.122978993
+.........
+")
+
+# Set the factor order.
+exposure_order <- sort(unique(data$exposure))
+mediator_order <- sort(unique(data$mediator))
+outcome_order <- c("CAT_score", "FEV1_pred", "FEV1_FVC_after")
+
+data <- data %>%
+  mutate(
+    exposure = factor(exposure, levels = exposure_order),
+    mediator = factor(mediator, levels = mediator_order),
+    outcome = factor(outcome, levels = outcome_order)
+  )
+
+ggplot(data,
+       aes(axis1 = exposure, 
+           axis2 = mediator, 
+           axis3 = outcome,
+           y = abs(beta))) +
+  geom_alluvium(aes(fill = abs(beta)),
+                width = 1/8, knot.pos = 0.3,
+                curve_type = "sigmoid", alpha = 0.85) +
+  geom_stratum(width = 1/8, fill = "white", color = "grey60") +
+  geom_text(stat = "stratum", aes(label = after_stat(stratum)), size = 3) +
+  scale_x_discrete(limits = c("Exposure", "Mediator", "Outcome"),
+                   expand = c(0.05, 0.05)) +
+  scale_fill_gradientn(
+    colors = c("#92bde0", "#c1ddee", "#f5f5f5", "#f3c4b7", "#d98982"),
+    name = "|Beta|"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.y = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "right"
+  ) +
+  labs(
+    title = "Mediation Analysis Sankey Diagram",
+    subtitle = "Color transitions from cool to warm as |Beta| increases"
+  )
+
+###########################################################################
+
+#MR circular heatmap
+
+library(circlize)
+
+# Load data
+df <- data.frame(
+  exposure = c("CI", "CI", "CI", "CI", "CI",
+               "NO2", "NO2", "NO2", "NO2", "NO2",
+               "PM10", "PM10", "PM10", "PM10", "PM10",
+               "PM2.5", "PM2.5", "PM2.5", "PM2.5", "PM2.5",
+               "SO2", "SO2", "SO2", "SO2", "SO2", "SO2",
+               "SO4", "SO4"),
+  outcome = c("CAT_score", "FEV1_FVC_after", "Phlegm", "COPD", "Dyspnea",
+              "CAT_score", "FEV1_pred", "Phlegm", "COPD", "Dyspnea",
+              "CAT_score", "FEV1_FVC_after", "Phlegm", "COPD", "Dyspnea",
+              "CAT_score", "FEV1_FVC_after", "Phlegm", "COPD", "Dyspnea",
+              "FEV1_FVC_after", "FEV1_FVC_after", "FEV1_pred", "Phlegm", "Phlegm", "COPD",
+              "FEV1_FVC_after", "Phlegm"),
+  beta = c(0.1298938974, 0.2065836871, 0.0107981435, 0.0093419335, 0.0057047331,
+           0.0040796829, 0.0041603679, 0.0003399629, 0.0002941164, 0.0001796047,
+           0.0128102031, 0.0203733897, 0.0010659854, 0.0009222293, 0.0005631674,
+           0.0223030695, 0.0354708759, 0.0018553907, 0.0016051775, 0.0009802156,
+           0.0638521454, 0.0366462505, 0.0659114463, 0.0019095832, 0.0014834131, 0.0009912076,
+           0.1401885108, 0.0056771818)
+)
+
+# Construct edge data.
+df_mat <- data.frame(
+  from = df$exposure,
+  to = df$outcome,
+  value = df$beta
+)
+
+# Map the color scale (β → soft gradient colors).）
+breaks <- seq(min(df$beta), max(df$beta), length.out = 5)
+colors <- c("#92bde0", "#c1ddee", "#f5f5f5", "#f3c4b7", "#d98982")
+color_fun <- circlize::colorRamp2(breaks, colors)
+df_mat$col <- color_fun(df_mat$value)
+
+# Clear the previous plot.
+circos.clear()
+
+# Pre-allocate tracks for adding labels.
+chordDiagram(
+  x = df_mat[, c("from", "to", "value")],
+  grid.col = NULL,
+  col = df_mat$col,
+  annotationTrack = "grid",
+  transparency = 0.2,
+  preAllocateTracks = list(track.height = 0.05)
+)
+
+# Add sector name labels (annotating each exposure and outcome).
+circos.trackPlotRegion(
+  track.index = 1,
+  panel.fun = function(x, y) {
+    sector_name = get.cell.meta.data("sector.index")
+    x_pos = get.cell.meta.data("xcenter")
+    y_pos = get.cell.meta.data("ylim")[2] + mm_y(2)
+    circos.text(x = x_pos, y = y_pos, labels = sector_name,
+                facing = "bending.inside", niceFacing = TRUE,
+                adj = c(0.5, 0), cex = 0.6)
+  },
+  bg.border = NA
+)
+
+#Add a color legend.
+legend("bottomleft",
+       legend = round(breaks, 4),
+       fill = colors,
+       title = expression(beta),
+       border = NA,
+       bty = "n",
+       cex = 0.8)
+
+###############################################################################################
+
