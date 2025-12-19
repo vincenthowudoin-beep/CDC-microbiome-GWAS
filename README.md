@@ -1,2 +1,8 @@
 # CDC-microbiome-GWAS
 This repository contains scripts for a series of bioinformatics analyses and related visualization workflows based on sputum next-generation sequencing data from the CDC cohort, including variant discovery, microbiome GWAS analyses, GLM-based association analyses, interaction analyses, and two-step Mendelian randomization (MR) analyses.
+
+1. Genome-Wide Association Study (GWAS): This section provides the commands and scripts used to perform GWAS on metagenomic data in this study. It includes procedures for quality control, variant calling, association testing, and the generation of GWAS summary statistics for downstream analyses.
+2. Two-Step Mendelian Randomization (MR) Analysis: This section provides the commands and scripts used to conduct two-step MR analyses in this study. It details the processing of GWAS summary statistics to construct exposure and outcome datasets, the preparation of instrumental variables, the implementation of MR models to infer causal relationships, and the aggregation and interpretation of results.
+3. General Linear Model (GLM) and Interaction Analysis: This section provides the commands and scripts used to perform GLM-based association analyses and evaluate interaction effects between variables in this study.
+4. Public data validation: This section contains the commands and scripts to process publicly available metagenomic data for variant discovery, followed by microbiome GWAS, gene annotation, pathway enrichment, and cross-cohort comparisons.
+5. Figure scripts: this section contains the scripts and datasets for this study's main and supplementary figures.
