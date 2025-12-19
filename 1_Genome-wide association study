@@ -1,0 +1,250 @@
+1. Software and database required
+Software:
+cutadapt:https://github.com/marcelm/cutadapt/
+
+bwa:https://sourceforge.net/projects/bio-bwa/
+
+samtools:https://github.com/samtools/samtools/releases
+
+jdk:http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html
+
+gatk:https://github.com/broadinstitute/gatk/releases/tag/4.1.7.0
+
+plink:http://www.cog-genomics.org/plink2/
+
+tabix:https://sourceforge.net/projects/samtools/files/tabix/tabix-0.2.6.tar.bz2
+
+bcftools:https://github.com/samtools/bcftools/releases/download/1.8/bcftools-1.8.tar.bz2
+
+bedtools:https://github.com/arq5x/bedtools2/archive/v2.25.0.tar.gz
+
+freebayes: https://github.com/freebayes/freebayes/releases/download/v1.3.6/freebayes-1.3.6-linux-amd64-static.gz
+
+gcta: https://yanglab.westlake.edu.cn/software/gcta/#Overview
+
+metal: https://csg.sph.umich.edu/abecasis/Metal/download/Linux-metal.tar.gz
+
+snpeff: https://pcingola.github.io/SnpEff/download/
+
+FINEMAP: https://github.com/ay-lab/FineMap
+
+LDBlockShow: https://github.com/BGI-shenzhen/LDBlockShow/?tab=readme-ov-file
+
+Database:
+Human genome(hg38):https://www.ncbi.nlm.nih.gov/genome/51
+
+GATK bundle(hg38):https://console.cloud.google.com/storage/browser/genomics-public-data/resources/broad/hg38/v0;tab=objects?prefix=&forceOnObjectsSortingFiltering=false
+
+2. Data preparation
+mkdir 00_rawdata 01_sequence_QC 02_alignment 03_genotyping 04_genotype_QC 05_Imputation 06_Association
+mv *.fastq 00_rawdata
+cd 00_rawdata/
+
+3. Sequence quality control
+for i in ./*R1.fq.gz
+do
+        SAMPLE=$(echo ${i} | sed "s/R1\.fq\.gz//")
+        echo ${SAMPLE}R1.fq.gz ${SAMPLE}R2.fq.gz
+        cutadapt \
+        --discard-trimmed \
+        -O 18 \
+        -j 20 \
+        -b AGATCGGAAGAGCACACGTCTGAACTCCAGTCA \
+        -B AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT \
+        -o ./cutadapt/${SAMPLE}R1.fq.gz \
+        -p ./cutadapt/${SAMPLE}R2.fq.gz \
+        ${SAMPLE}R1.fq.gz ${SAMPLE}R2.fq.gz
+done
+
+nohup time fastqc ./*.fq.gz -t 20
+multiqc -f -d ./ -o ./
+
+4. Sequence alignment
+bwa index 
+	-a bwtsw 
+	/bigdata/gaojy/ref/bwa/GRCh38_chr_LN/GRCh38_chr_LN.fasta 
+
+gatk 
+	CreateSequenceDictionary \
+	-R /bigdata/gaojy/ref/bwa_samtools/GRCh38_chr_LN/GRCh38_chr_LN.fasta \
+	-O /bigdata/gaojy/ref/bwa_samtools/GRCh38_chr_LN/GRCh38_chr_LN.dict 
+
+for i in ./*R1.fq.gz
+do
+	SAMPLE=$(echo ${i} | sed "s/R1\.fq\.gz//")
+	echo ${SAMPLE}R1.fq.gz ${SAMPLE}R2.fq.gz
+	bwa mem -t 20 -M \
+	-R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tLB:WGS\tPL:Illumina" \
+	/bigdata/gaojy/ref/bwa_samtools/GRCh38_chr_LN/GRCh38_chr_LN.fasta \
+	./${SAMPLE}R1.fq.gz \
+	./${SAMPLE}R2.fq.gz \
+	| samtools sort -@ 20 -n -O bam \
+	-o ${SAMPLE}.sorted.bam
+done
+
+5. Genotyping
+samtools view -b -S -@ 20 
+	/02_alignment/SAMPLE.sam > /02_alignment/SAMPLE.bam 
+
+samtools sort -@ 20 -n -O bam 
+	-o /02_alignment/SAMPLE.sorted.bam 
+	/02_alignment/SAMPLE.bam
+
+samtools fixmate -m -@ 20 
+	/02_alignment/SAMPLE.sorted.bam 
+	/02_alignment/SAMPLE.fixmate.bam
+
+samtools sort -@ 20 
+	-o /02_alignment/SAMPLE.positionsorted.bam 
+	/02_alignment/SAMPLE.fixmate.bam
+
+samtools markdup -@ 20 
+	/02_alignment/SAMPLE.positionsorted.bam 
+	/02_alignment/SAMPLE.markdup.bam
+
+samtools index SAMPLE.markdup.bam
+
+nohup gatk 
+	BaseRecalibrator \
+	-I 02_alignment/SAMPLE.markdup.bam \
+	-R /bigdata/gaojy/ref/bwa_samtools/GRCh38_chr_LN/GRCh38_chr_LN.fasta \
+	-O /03_genotyping/SAMPLE.BQSR.recal.table \
+	--known-sites /bigdata/gaojy/ref/gatk/dbsnp_138.hg38.vcf.gz \
+	--known-sites /bigdata/gaojy/ref/gatk/hapmap_3.3.hg38.vcf.gz \
+	--known-sites /bigdata/gaojy/ref/gatk/1000G_omni2.5.hg38.vcf.gz \
+	--known-sites /bigdata/gaojy/ref/gatk/hg38_v0_1000G_phase3_v4_20130502.sites.hg38.vcf 
+
+nohup gatk 
+	ApplyBQSR \
+	-bqsr /03_genotyping/SAMPLE.BQSR.recal.table \
+	-R /bigdata/gaojy/ref/bwa_samtools/GRCh38_chr_LN/GRCh38_chr_LN.fasta \
+	-I /02_alignment/SAMPLE.markdup.bam \
+	-O /03_genotyping/SAMPLE.markdup.BQSR.bam
+
+nohup gatk 
+	HaplotypeCaller \
+	-R /bigdata/gaojy/ref/bwa_samtools/GRCh38_chr_LN/GRCh38_chr_LN.fasta \
+	-ERC GVCF \
+	--native-pair-hmm-threads 20 \
+	-I /03_genotyping/SAMPLE.markdup.BQSR.bam \
+	-O /03_genotyping/SAMPLE.g.vcf.gz
+
+find /03_genotyping/ -name "*.g.vcf.gz" > input.list
+
+nohup gatk 
+	CombineGVCFs \
+	-R /bigdata/gaojy/ref/bwa_samtools/GRCh38_chr_LN/GRCh38_chr_LN.fasta \
+	-V /03_genotyping/input.list
+	-O /03_genotyping/ALL_SAMPLE.g.vcf.gz
+
+nohup gatk 
+	GenotypeGVCFs \
+	-R /bigdata/gaojy/ref/bwa_samtools/GRCh38_chr_LN/GRCh38_chr_LN.fasta \
+	-dbsnp /bigdata/gaojy/ref/gatk/dbsnp_138.hg38.vcf.gz\
+	-V /03_genotyping/ALL_SAMPLE.g.vcf.gz \
+	-O /03_genotyping/ALL_SAMPLE.genotype.vcf.gz
+
+6. Genotype QC
+nohup gatk 
+	SelectVariants \
+	-R /bigdata/gaojy/ref/bwa_samtools/GRCh38_chr_LN/GRCh38_chr_LN.fasta \
+	--select-type-to-include SNP \
+	-V /03_genotyping/ALL_SAMPLE.genotype.vcf.gz \
+	-O /03_genotyping/ALL_SAMPLE.genotype.snp.vcf.gz
+
+/data/gaojy/biosoft/gatk-4.1.7.0/gatk 
+ 	VariantFiltration 
+ 	-V /03_genotyping/ALL_SAMPLE.genotype.snp.vcf.gz 
+ 	-filter "QD < 2.0" 
+ 	--filter-name "QD2" 
+ 	-filter "QUAL < 30.0" 
+ 	--filter-name "QUAL30" 
+ 	-filter "SOR > 3.0" 
+ 	--filter-name "SOR3" 
+ 	-filter "FS > 60.0" 
+ 	--filter-name "FS60" 
+ 	-filter "MQ < 40.0" 
+ 	--filter-name "MQ40" 
+ 	-filter "MQRankSum < -12.5" 
+ 	--filter-name "MQRankSum-12.5" 
+ 	-filter "ReadPosRankSum < -8.0" 
+ 	--filter-name "ReadPosRankSum-8" 
+ 	-O /04_genotype_QC/ALL_SAMPLE.genotype.PASS.vcf
+
+plink 
+	--vcf /04_genotype_QC/ALL_SAMPLE.genotype.PASS.vcf
+	--recode 
+	--allow-no-sex 
+	--out /04_genotype_QC/ALL_SAMPLE.genotype.PASS
+
+plink 
+	--file /04_genotype_QC/ALL_SAMPLE.genotype.PASS
+	-geno 0.05  
+	--recode 
+	--out /04_genotype_QC/ALL_SAMPLE.genotype.PASS.geno
+
+plink 
+	--file /04_genotype_QC/ALL_SAMPLE.genotype.PASS.geno 
+	-mind 0.05  
+	--recode 
+	--out /04_genotype_QC/ALL_SAMPLE.genotype.PASS.geno.mind
+
+plink 
+	--file /04_genotype_QC/ALL_SAMPLE.genotype.PASS.geno.mind
+	-maf 0.05  
+	--recode 
+	--out /04_genotype_QC/ALL_SAMPLE.genotype.PASS.geno.mind.maf
+
+plink 
+	--file /04_genotype_QC/ALL_SAMPLE.genotype.PASS.geno.mind.maf 
+	-hwe 0.0001  
+	--recode
+	--out /04_genotype_QC/ALL_SAMPLE.genotype.QC
+
+7.heritability(GCTA)
+/data/gaojy/biosoft/gcta-1.94.1-linux-kernel-3-x86_64/gcta64 
+--bfile /04_genotype_QC/ALL_SAMPLE.genotype.QC 
+--autosome 
+--maf 0.01 
+--make-grm 
+--out ALL_SAMPLE.genotype.QC 
+--thread-num 10
+
+/data/gaojy/biosoft/gcta-1.94.1-linux-kernel-3-x86_64/gcta64 
+--grm ALL_SAMPLE.genotype.QC 
+--pheno test.phen 
+--reml 
+--out ALL_SAMPLE.genotype.QC 
+--thread-num 10
+
+8. Association
+/data/gaojy/biosoft/gcta-1.94.1-linux-kernel-3-x86_64/gcta64 
+--mbfile /04_genotype_QC/path.txt 
+--make-grm 
+--thread-num 20 
+--out ALL_SAMPLE.genotype.QC
+
+/data/gaojy/biosoft/gcta-1.94.1-linux-kernel-3-x86_64/gcta64 
+--grm /04_genotype_QC/ALL_SAMPLE.genotype.QC 
+--make-bK-sparse 0.05 
+--out ALL_SAMPLE.genotype.QC.sp_grm
+
+for i in /04_genotype_QC/phenotype/*.txt
+do
+/data/gaojy/biosoft/gcta-1.94.1-linux-kernel-3-x86_64/gcta64 
+--mbfile /04_genotype_QC/path.txt 
+--grm-sparse /04_genotype_QC/ALL_SAMPLE.genotype.QC.sp_grm 
+--fastGWA-mlm 
+--pheno ${i} 
+--qcovar ALL_SAMPLE.genotype.co.txt 
+--thread-num 20 
+--out ${i}.geno_assoc
+done
+
+9. Annotation
+java -jar snpEff.jar hg38
+/04_genotype_QC/ALL_SAMPLE.genotype.QC.vcf > /04_genotype_QC/ALL_SAMPLE.genotype.QC
+
+10. meta GWAS
+/data/gaojy/biosoft/metal-2011-03-25/metal metal.txt
+
