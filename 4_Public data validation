@@ -1,0 +1,117 @@
+1. Gennotyping
+freebayes
+wget https://github.com/freebayes/freebayes/releases/download/v1.3.6/freebayes-1.3.6-linux-amd64-static.gz
+gunzip freebayes-1.3.6-linux-amd64-static.gz
+chmod +x freebayes-1.3.6-linux-amd64-static
+
+/data/gaojy/biosoft/freebayes-1.3.6/freebayes-1.3.6-linux-amd64-static 
+	-f /data/gaojy/ref/bwa/GRCh38_chr_LN/GRCh38_chr_LN.fasta 
+	${SAMPLE}.markdup.BQSR.bam > ${SAMPLE}.freebayes.vcf
+
+2. QC
+/data/gaojy/biosoft/plink-2.0.0.alpha/plink 
+	--vcf {SAMPLE}.freebayes.vcf 
+  --recode --make-bed
+	--out {SAMPLE}.freebayes
+
+/data/gaojy/biosoft/plink-2.0.0.alpha/plink
+	--bfile {SAMPLE}.freebayes
+  -geno 0.05  
+  --recode 
+  --make-bed 
+	--out {SAMPLE}.freebayes.geno
+
+/data/gaojy/biosoft/plink-2.0.0.alpha/plink
+	--bfile {SAMPLE}.freebayes.geno
+  -mind 0.05 
+  --recode 
+  --make-bed 
+	--out {SAMPLE}.freebayes.geno.mind
+
+/data/gaojy/biosoft/plink-2.0.0.alpha/plink
+	--bfile {SAMPLE}.freebayes.geno.mind
+  --maf 0.05 
+  --recode 
+  --make-bed 
+	--out {SAMPLE}.freebayes.geno.mind.maf
+
+/data/gaojy/biosoft/plink-2.0.0.alpha/plink
+	--bfile {SAMPLE}.freebayes.geno.mind.maf
+  --hwe 0.00001 
+  --recode 
+  --make-bed
+	--out {SAMPLE}.freebayes.geno.mind.maf.hwe
+
+3. Association
+/data/gaojy/biosoft/gcta-1.94.1-linux-kernel-3-x86_64/gcta64 
+--mbfile path.txt 
+--make-grm 
+--thread-num 20 
+--out {SAMPLE}.freebayes.geno.mind.maf.hwe
+
+/data/gaojy/biosoft/gcta-1.94.1-linux-kernel-3-x86_64/gcta64 
+--grm {SAMPLE}.freebayes.geno.mind.maf.hwe 
+--make-bK-sparse 0.05 
+--out {SAMPLE}.freebayes.geno.mind.maf.hwe.sp_grm
+
+for i in /phenotype/*.txt
+do
+/data/gaojy/biosoft/gcta-1.94.1-linux-kernel-3-x86_64/gcta64 
+--mbfile path.txt 
+--grm-sparse {SAMPLE}.freebayes.geno.mind.maf.hwe.sp_grm 
+--fastGWA-mlm 
+--pheno ${i} 
+--qcovar {SAMPLE}.freebayes.geno.mind.maf.hwe.co.txt 
+--thread-num 20 
+--out ${i}.geno_assoc
+done
+
+4. Annotation
+java -jar snpEff.jar hg38
+{SAMPLE}.freebayes.geno.mind.maf.hwe.vcf > {SAMPLE}.freebayes.geno.mind.maf.hwe
+
+5. Pathway enrichment
+library(magrittr)
+library(clusterProfiler)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(enrichplot)
+library(clusterProfiler)
+library(org.Hs.eg.db)  # 人类基因注释数据库
+library(AnnotationDbi)
+library(enrichplot)
+library(ggplot2)
+
+setwd(r'(C:\Users\HP\Desktop)')
+
+gene_list <- read.table("air.pollutant.txt", header = F)
+genes <- as.character(gene_list[,1])
+entrez_genes <- bitr(genes, fromType="SYMBOL", toType="ENTREZID", 
+                     OrgDb=org.Hs.eg.db)
+
+gene_list <- entrez_genes$ENTREZID
+
+background_genes <- keys(org.Hs.eg.db, keytype = "ENTREZID")
+
+#KEGG
+ekegg <- enrichKEGG(gene = gene_list,
+                    universe = background_genes,  # Set the background genes.
+                    organism = "hsa",  # The human KEGG organism ID
+                    pvalueCutoff = 1,
+                    qvalueCutoff = 1)
+
+write.csv(as.data.frame(ekegg), "KEGG_results.CDC_D4.csv")
+
+
+#GO
+ego <- enrichGO(gene = gene_list,
+                universe = background_genes,  # Set the background genes.
+                OrgDb = org.Hs.eg.db,         # The human gene database.
+                keyType = "ENTREZID",
+                ont = "BP",                   # “BP” (Biological Process), “MF” (Molecular Function), and “CC” (Cellular Component).
+                pAdjustMethod = "BH",
+                pvalueCutoff = 0.1,
+                qvalueCutoff = 0.2)
+
+write.csv(as.data.frame(ego), "GO_results.fungi.all.csv")
