@@ -1,0 +1,117 @@
+#################################################################################################
+
+#interaction analysis
+data <- read.table("inter_17.1_fungi.txt", 
+                   header = TRUE, 
+                   sep = "\t", 
+                   comment.char = "", 
+                   check.names = F, 
+                   row.names = 1)
+
+# Set variables.
+x_vars <- c("Biofuel_exposure", "Occupational_pollution", "Smoking", "Second_hand_smoking",
+            "CI", "CO", "NH4", "NO2", "NO3", "O3", "SO2", "SO4", "PM1", "PM2.5", "PM10","A2","A10","B2","B10","C2","C10")
+
+y_vars <- c("CAT_score",	"FEV1_FVC_Post")
+
+# Iteratively fit models and save the coefficient tables as TSV files.
+for (y in y_vars) {
+  formula_str <- paste0(y, " ~ (", paste(x_vars, collapse = " + "), ") * genotype_17_82126256
+")
+  model <- glm(as.formula(formula_str), 
+               data = data, 
+               family = gaussian(),
+               control = glm.control(maxit = 50))
+  
+  # Extract the coefficient summaries.
+  coef_table <- summary(model)$coefficients
+  
+  # Construct the filename.
+  file_name <- paste0("./result/inter_result_", y, ".txt")
+  
+  # Save as a tab-delimited text file (with no syntax errors).
+  write.table(coef_table, 
+              file = file_name, 
+              sep = "\t", 
+              quote = FALSE, 
+              col.names = NA)
+}
+
+###########################################################################################
+
+#GLM (genotype stratified)
+setwd(r'(C:\Users\HP\Desktop)')
+# Read the data.
+data <- read.table("health_pre.1.txt", 
+                   header = TRUE, 
+                   sep = "\t", 
+                   comment.char = "", 
+                   check.names = FALSE, 
+                   row.names = 1)
+
+# List of dependent variables.
+dependent_vars <- c("Eubacterium_nodatum",	
+                    "Mogibacterium_diversum",	
+                    "Eubacterium_saphenum",	
+                    "Peptostreptococcus_stomatis",	
+                    "Streptococcus_infantis",	
+                    "Parvimonas_micra",	
+                    "Filifactor_alocis")
+
+# List of independent variables.
+independent_vars <- c("Biofuel_exposure", "Occupational_pollution", "Smoking", "Second_hand_smoking",
+                      "CI", "CO", "NH4", "NO2", "NO3", "O3", "SO2", "SO4", "PM1", "PM2.5", "PM10")
+
+# Covariates.
+covariates <- c("Age", 
+                "Sex", 
+                "BMI")
+
+# List for storing results.
+results_list <- list()
+
+# Iterate over combinations.
+for (dep in dependent_vars) {
+  for (indep in independent_vars) {
+    formula_str <- paste(dep, "~", paste(c(indep, covariates), collapse = " + "))
+    formula <- as.formula(formula_str)
+    
+    # Fit the model and catch errors.
+    model <- try(glm(formula, family = gaussian(), data = data), silent = TRUE)
+    if (inherits(model, "try-error")) next
+    
+    # Extract the coefficient summaries.
+    coefs <- summary(model)$coefficients
+    coefs_df <- as.data.frame(coefs)
+    
+    # Filter the rows corresponding to the current independent variable.
+    if (indep %in% rownames(coefs_df)) {
+      selected_row <- coefs_df[indep, , drop = FALSE]
+      selected_row$DependentVar <- dep
+      selected_row$IndependentVar <- indep
+      selected_row$Term <- indep
+      
+      # Reorder the columns.
+      selected_row <- selected_row[, c("DependentVar", 
+                                       "IndependentVar", 
+                                       "Term", 
+                                       "Estimate", 
+                                       "Std. Error", 
+                                       "t value", 
+                                       "Pr(>|t|)")]
+      
+      results_list[[paste(dep, indep, sep = "_")]] <- selected_row
+    }
+  }
+}
+
+# Merge all results.
+final_results <- do.call(rbind, results_list)
+
+# Write to file.
+write.table(final_results,
+            file = "filtered_model_results.txt",
+            sep = "\t",
+            row.names = FALSE,
+            quote = FALSE)
+
