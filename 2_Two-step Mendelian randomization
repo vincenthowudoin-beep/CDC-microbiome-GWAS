@@ -1,0 +1,91 @@
+
+library(MendelianRandomization)
+
+# Set the root directories for the exposure and outcome.
+exposure_dir <- "E:/work/02.CDC/mr/beta_se/fungi/micro_lungfunction/micro"
+outcome_dir <- "E:/work/02.CDC/mr/beta_se/fungi/micro_lungfunction/pre_COPD"
+
+# Retrieve all BETA filenames (without paths) from the exposure directory and extract the sample IDs.
+beta_files <- list.files(exposure_dir, pattern = "_BETA\\.txt$", full.names = FALSE)
+# 提取样本 ID，例如 file1_BETA.txt -> file1
+ids <- unique(sub("_BETA\\.txt$", "", beta_files))
+
+# Initialize the results summary table.
+all_results <- data.frame()
+
+# Perform Mendelian randomization analysis for each sample individually.
+for (id in ids) {
+  message("Processing sample ID: ", id)
+  
+  # Construct the full file paths for the corresponding BETA and SE files of the exposure and outcome.
+  exposure_beta_file <- file.path(exposure_dir, paste0(id, "_BETA.txt"))
+  exposure_se_file <- file.path(exposure_dir, paste0(id, "_SE.txt"))
+  outcome_beta_file <- file.path(outcome_dir, paste0(id, "_BETA.txt"))
+  outcome_se_file <- file.path(outcome_dir, paste0(id, "_SE.txt"))
+  
+  # Check whether the files exist.
+  if (!file.exists(exposure_beta_file)) {
+    warning("Missing exposure BETA file: ", exposure_beta_file)
+    next
+  }
+  if (!file.exists(exposure_se_file)) {
+    warning("Missing exposure SE file: ", exposure_se_file)
+    next
+  }
+  if (!file.exists(outcome_beta_file)) {
+    warning("Missing outcome BETA file: ", outcome_beta_file)
+    next
+  }
+  if (!file.exists(outcome_se_file)) {
+    warning("Missing outcome SE file: ", outcome_se_file)
+    next
+  }
+  
+  # Read the data (assuming the files contain headerless numeric values only).
+  bx <- read.table(exposure_beta_file, header = FALSE)[,1]
+  bxse <- read.table(exposure_se_file, header = FALSE)[,1]
+  by <- read.table(outcome_beta_file, header = FALSE)[,1]
+  byse <- read.table(outcome_se_file, header = FALSE)[,1]
+  
+  # Construct the MR input object.
+  mr_obj <- mr_input(bx = bx, bxse = bxse, by = by, byse = byse)
+  
+  # 执行 IVW MR 方法
+  ivw_res <- tryCatch({
+    mr_ivw(mr_obj,
+           model = "default",
+           robust = FALSE,
+           penalized = FALSE,
+           correl = FALSE,
+           weights = "simple",
+           psi = 0,
+           distribution = "normal",
+           alpha = 5e-7)
+  }, error = function(e) {
+    warning("MR IVW failed for sample ID ", id, ": ", e$message)
+    return(NULL)
+  })
+  
+  # Save the results.
+  if (!is.null(ivw_res)) {
+    res_df <- data.frame(
+      ID = id,
+      Estimate = ivw_res$Estimate,
+      StdError = ivw_res$StdError,
+      CIlower = ivw_res$CILower,
+      CIupper = ivw_res$CIUpper,
+      IVWp = ivw_res$Pvalue,
+      Fstat = ivw_res$Fstat,
+      SNPs = paste(ivw_res$SNPs, collapse = ",")
+    )
+    
+    all_results <- rbind(all_results, res_df)
+  }
+}
+
+# Write the results to a file (it is recommended to specify the output path).
+output_file <- "E:/work/02.CDC/mr/beta_se/fungi/micro_lungfunction/ivw_result.txt"
+write.table(all_results, file = output_file,
+            row.names = FALSE, quote = FALSE, sep = "\t")
+
+message("MR analysis completed. Results saved to: ", output_file)
