@@ -248,3 +248,28 @@ java -jar snpEff.jar hg38
 10. meta GWAS
 /data/gaojy/biosoft/metal-2011-03-25/metal metal.txt
 
+11. Finemapping
+awk 'BEGIN{OFS=" "} {$1=$1; print}' 17_9770057.ld > 17_9770057.ld.space
+
+mv 17_9770057.ld.space 17_9770057.ld
+
+awk '$1 == 17 && $3 >= 8770057 && $3 <= 10770057' file43.txt.geno_assoc.fastGWA.chr.pos.fastGWA > 17_9770057
+
+awk 'BEGIN{OFS=" "; print "rsid chromosome position allele1 allele2 maf beta se"}  {print $2, $1, $3, $4, $5, $7, $8, $9}' 17_76837901 > 17_76837901.z
+
+/data/gaojy/biosoft/finemap_v1.4.2_x86_64/finemap_v1.4.2_x86_64 
+--config 
+--in-files ./17_9770057.master 
+--dataset 1 
+--rsids 17:9770057 > 17_9770057.finemap.log
+
+12. LDBlock
+awk -F '\t' '$1 == "17" && $3 >= 75837900 && $3 <= 77837900' file21.txt.geno_assoc.fastGWA.chr.pos.result | awk 'BEGIN{ FS=" ";OFS="\t" }{print $1,$3,$10}' > 17_76837900.Pepto.LD.pval
+
+/data/gaojy/biosoft/LDblockshow-1.40/bin/LDBlockShow 
+-InVCF ./17_76837900/17_76837900.vcf 
+-InGWAS ./17_76837900.22.LD.pval  
+-OutPut 17_76837900.S.infantis 
+-Region 17:76707900:76937900 
+-TopSite 
+-OutPdf
